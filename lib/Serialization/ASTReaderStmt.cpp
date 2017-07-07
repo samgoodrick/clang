@@ -1212,6 +1212,16 @@ void ASTStmtReader::VisitCXXForRangeStmt(CXXForRangeStmt *S) {
   S->setBody(Record.readSubStmt());
 }
 
+void ASTStmtReader::VisitCXXTupleExpansionStmt(CXXTupleExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
+void ASTStmtReader::VisitCXXPackExpansionStmt(CXXPackExpansionStmt *S) {
+  VisitStmt(S);
+  // FIXME: Implement me.
+}
+
 void ASTStmtReader::VisitMSDependentExistsStmt(MSDependentExistsStmt *S) {
   VisitStmt(S);
   S->KeywordLoc = ReadSourceLocation();
