@@ -1997,6 +1997,30 @@ public:
                                           Sema::BFRK_Rebuild);
   }
 
+  /// \brief Build a new C++ tuple-based for expansion statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  StmtResult RebuildCXXTupleExpansionStmt(SourceLocation ForLoc,
+                                          SourceLocation EllipsisLoc,
+                                          SourceLocation ColonLoc,
+                                          Stmt *RangeVar, Stmt *LoopVar,
+                                          SourceLocation RParenLoc) {
+    return getSema().BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc,
+                                                RangeVar, LoopVar, RParenLoc,
+                                                Sema::BFRK_Rebuild);
+  }
+
+  /// \brief Build a new C++ tuple-based pack expansion statement.
+  ///
+  /// By default, performs semantic analysis to build the new statement.
+  /// Subclasses may override this routine to provide different behavior.
+  StmtResult RebuildCXXPackExpansionStmt(Stmt *Range, Stmt *LoopVar,
+                                         Stmt *Body) {
+    // FIXME: Actually implement this function.
+    llvm_unreachable("unimplemented");
+  }
+
   /// \brief Build a new C++0x range-based for statement.
   ///
   /// By default, performs semantic analysis to build the new statement.
