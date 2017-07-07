@@ -3389,6 +3389,14 @@ Stmt *ASTReader::ReadStmtFromStream(ModuleFile &F) {
       S = new (Context) CXXForRangeStmt(Empty);
       break;
 
+    case STMT_CXX_TUPLE_EXPANSION:
+      S = new (Context) CXXTupleExpansionStmt(Empty);
+      break;
+      
+    case STMT_CXX_PACK_EXPANSION:
+      S = new (Context) CXXPackExpansionStmt(Empty);
+      break;      
+      
     case STMT_MS_DEPENDENT_EXISTS:
       S = new (Context) MSDependentExistsStmt(SourceLocation(), true,
                                               NestedNameSpecifierLoc(),
