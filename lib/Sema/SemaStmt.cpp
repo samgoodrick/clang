@@ -2155,6 +2155,60 @@ static StmtResult RebuildForRangeWithDereference(Sema &SemaRef, Scope *S,
                                       Sema::BFRK_Rebuild);
 }
 
+/// Build an expression that evaluates \c std::tuple_size\<RangeType\>::value
+/// for the given type \p RangeType. This is to detect tuple expansions.
+///
+/// \p RangeType must not be a dependent type.
+///
+/// \returns  \c true if the expression can be evaluated, \c false otherwise.
+///           If \c true, \p Size is set to the number of elements in the tuple.
+static bool GetTupleSize(Sema &SemaRef, SourceLocation Loc, QualType RangeType,
+                         llvm::APSInt &Size) {
+  NamespaceDecl *Std = SemaRef.getStdNamespace();
+  IdentifierInfo *SizeName = &SemaRef.PP.getIdentifierTable().get("tuple_size");
+  LookupResult SizeLookup(SemaRef, SizeName, Loc, Sema::LookupAnyName);
+  SemaRef.LookupQualifiedName(SizeLookup, Std);
+  ClassTemplateDecl *TupleSize = SizeLookup.getAsSingle<ClassTemplateDecl>();
+  if (!TupleSize) {
+    SemaRef.Diag(Loc, diag::err_no_member) << SizeName << Std;
+    return false;
+  }
+
+  // Build a template specialization, instantiate it, and then complete it.
+  TemplateName TempName(TupleSize);
+  TemplateArgument Arg(RangeType);
+  TypeSourceInfo *TSI =
+      SemaRef.Context.getTrivialTypeSourceInfo(RangeType, Loc);
+  TemplateArgumentLoc ArgLoc(Arg, TSI);
+  TemplateArgumentListInfo TempArgs(Loc, Loc);
+  TempArgs.addArgument(ArgLoc);
+  QualType SpecType = SemaRef.CheckTemplateIdType(TempName, Loc, TempArgs);
+
+  if (SemaRef.RequireCompleteType(Loc, SpecType, diag::err_incomplete_type))
+    return false;
+  CXXRecordDecl *Spec = SpecType->getAsCXXRecordDecl();
+
+  // Lookup the the '::value' member in the specifier.
+  IdentifierInfo *ValueName = &SemaRef.PP.getIdentifierTable().get("value");
+  LookupResult ValueLookup(SemaRef, ValueName, Loc, Sema::LookupOrdinaryName);
+  SemaRef.LookupQualifiedName(ValueLookup, Spec);
+  VarDecl *Value = ValueLookup.getAsSingle<VarDecl>();
+  if (!Value) {
+    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
+    return false;
+  }
+
+  // Build an expression that accesses the member and evaluate it.
+  ExprResult Ref =
+      SemaRef.BuildDeclRefExpr(Value, Value->getType(), VK_LValue, Loc);
+  if (!Ref.get()->EvaluateAsInt(Size, SemaRef.Context)) {
+    // FIXME: This is probably not the right error.
+    SemaRef.Diag(Loc, diag::err_no_member) << ValueName << Spec;
+    return false;
+  }
+  return true;
+}
+
 namespace {
 /// RAII object to automatically invalidate a declaration if an error occurs.
 struct InvalidateOnErrorScope {
@@ -2491,6 +2545,67 @@ Sema::BuildCXXForRangeStmt(SourceLocation ForLoc, SourceLocation CoawaitLoc,
       cast_or_null<DeclStmt>(EndDeclStmt.get()), NotEqExpr.get(),
       IncrExpr.get(), LoopVarDS, /*Body=*/nullptr, ForLoc, CoawaitLoc,
       ColonLoc, RParenLoc);
+}
+
+/// Unpacks a loop variable from its statement.
+static bool UnpackLoopVar(Sema &SemaRef, Stmt *First, Expr *Second,
+                          DeclStmt *&DS, Decl *&Var) {
+  DS = dyn_cast<DeclStmt>(First);
+  assert(DS && "first part of for range not a decl stmt");
+
+  if (!DS->isSingleDecl()) {
+    // FIXME: Update the diagnostic.
+    SemaRef.Diag(DS->getStartLoc(), diag::err_type_defined_in_for_range);
+    return false;
+  }
+
+  Var = DS->getSingleDecl();
+  if (Var->isInvalidDecl() || !Second ||
+      SemaRef.DiagnoseUnexpandedParameterPack(Second, Sema::UPPC_Expression)) {
+    Var->setInvalidDecl();
+    return false;
+  }
+  return true;
+}
+
+/// Synthesize a mostly qualified nested name specifier for a declaration.
+///
+/// This assumes the the declaration is both non-dependent and has no
+/// dependent components of its scope. Note that the source locations refer
+/// to the point of synthesis, not physical source code locations.
+///
+// TODO: Allow this to be dependent.
+static NestedNameSpecifierLoc GetQualifiedNameForDecl(ASTContext &Cxt, Decl *D,
+                                                      SourceLocation Loc) {
+  // Get the path to the the TU.
+  llvm::SmallVector<DeclContext *, 4> Path;
+  for (DeclContext *DC = D->getDeclContext(); !isa<TranslationUnitDecl>(DC);
+       DC = DC->getParent()) {
+    if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
+      // Don't include inline namespaces.
+      if (NS->isInline())
+        continue;
+    }
+    Path.push_back(DC);
+  }
+  std::reverse(Path.begin(), Path.end());
+
+  // Build the NNS.
+  NestedNameSpecifierLocBuilder Builder;
+  for (DeclContext *DC : Path) {
+    if (NamespaceDecl *NS = dyn_cast<NamespaceDecl>(DC)) {
+      // Builds 'NS::'.
+      Builder.Extend(Cxt, NS, Loc, Loc);
+    } else if (CXXRecordDecl *Class = dyn_cast<CXXRecordDecl>(DC)) {
+      QualType T = Cxt.getTagDeclType(Class);
+      TypeSourceInfo *TSI = Cxt.getTrivialTypeSourceInfo(T);
+      // Builds 'Class::'. There is no template keyword.
+      Builder.Extend(Cxt, SourceLocation(), TSI->getTypeLoc(), Loc);
+    } else {
+      llvm_unreachable("Unhandled nested name specifier kind");
+    }
+  }
+  return Builder.getWithLocInContext(Cxt);
 }
 
 /// Build a C++ expansion statement.
@@ -2856,6 +2971,74 @@ StmtResult Sema::FinishCXXForRangeStmt(Stmt *S, Stmt *B) {
   DiagnoseForRangeVariableCopies(*this, ForStmt);
 
   return S;
+}
+
+/// Finish a tuple expansion by instantiating the loop body for each element
+/// of the tuple.
+StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
+                                             Stmt *B) {
+  SourceLocation Loc = S->getColonLoc();
+
+  // The loop body is the pre-instantiated version of the composed loop body.
+  S->setBody(B);
+
+  // If the range initializer is dependent, then we can't deduce the tuple
+  // type or instantiate the body. Just return the statement as-is.
+  if (S->getRangeInit()->isTypeDependent())
+    return S;
+
+  // Return an empty compound statement.
+  if (S->getSize() == 0) {
+    return new (Context)
+        CompoundStmt(Context, None, SourceLocation(), SourceLocation());
+  }
+
+  // Create a new compound statement that binds the loop variable with the
+  // parsed body. This is what we're going to instantiate.
+  Stmt *VarAndBody[] = {S->getLoopVarStmt(), B};
+  Stmt *Body = new (Context)
+      CompoundStmt(Context, VarAndBody, SourceLocation(), SourceLocation());
+
+  // Instantiate the loop body for each element of the tuple.
+  llvm::SmallVector<Stmt *, 8> Stmts;
+  for (std::size_t I = 0; I < S->getSize(); ++I) {
+    IntegerLiteral *E = IntegerLiteral::Create(
+        Context, llvm::APSInt::getUnsigned(I), Context.getSizeType(), Loc);
+    TemplateArgument Args[] = {TemplateArgument(
+        Context, llvm::APSInt(E->getValue(), true), E->getType())};
+    TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
+    MultiLevelTemplateArgumentList MultiArgs(TempArgs);
+
+    // We need a local instantiation scope for this.
+    LocalInstantiationScope Locals(*this);
+    InstantiatingTemplate Inst(*this, B->getLocStart(), S, Args,
+                               B->getSourceRange());
+    StmtResult Instantiation = SubstForTupleBody(Body, MultiArgs);
+    if (Instantiation.isInvalid())
+      return StmtError();
+    Stmts.push_back(Instantiation.get());
+  }
+
+  Stmt **Results = new (Context) Stmt *[Stmts.size()];
+  std::copy(Stmts.begin(), Stmts.end(), Results);
+  S->setInstantiatedStatements(Results);
+
+  return S;
+}
+
+StmtResult Sema::FinishCXXPackExpansionStmt(CXXPackExpansionStmt *S, Stmt *B) {
+  llvm_unreachable("Pack expansion statement not implemented");
+}
+
+/// Attach the body to the expansion statement, and expand as needed.
+StmtResult Sema::FinishCXXExpansionStmt(Stmt *S, Stmt *B) {
+  if (!S || !B)
+    return StmtError();
+  if (CXXTupleExpansionStmt *TES = dyn_cast<CXXTupleExpansionStmt>(S))
+    return FinishCXXTupleExpansionStmt(TES, B);
+  if (CXXPackExpansionStmt *PES = dyn_cast<CXXPackExpansionStmt>(S))
+    return FinishCXXPackExpansionStmt(PES, B);
+  llvm_unreachable("Invalid expansion statement");
 }
 
 StmtResult Sema::ActOnGotoStmt(SourceLocation GotoLoc,
