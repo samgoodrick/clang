@@ -2772,6 +2772,51 @@ Sema::SubstStmt(Stmt *S, const MultiLevelTemplateArgumentList &TemplateArgs) {
   return Instantiator.TransformStmt(S);
 }
 
+namespace {
+/// The loop body instantiator is like the template instantatior in
+/// that it produces new trees by substituting template arguments. Unlike
+/// the TemplateInstantiator, this does not form declarations in a dependent
+/// context to an instantiated context. It simply rebuilds the tree,
+/// performing local substitutions and lookups as needed.
+class LoopBodyInstantiator : public TreeTransform<LoopBodyInstantiator> {
+  const MultiLevelTemplateArgumentList &TemplateArgs;
+  SourceLocation Loc;
+
+public:
+  typedef TreeTransform<LoopBodyInstantiator> inherited;
+
+  LoopBodyInstantiator(Sema &SemaRef,
+                       const MultiLevelTemplateArgumentList &TemplateArgs,
+                       SourceLocation Loc)
+      : inherited(SemaRef), TemplateArgs(TemplateArgs), Loc(Loc) {}
+
+  // The loop body instantiator always rebuilds trees.
+  bool AlwaysRebuild() { return true; }
+
+  /// \brief Transform the definition of the given declaration by
+  /// instantiating it.
+  Decl *TransformDefinition(SourceLocation Loc, Decl *D) {
+    Decl *Inst = getSema().SubstDecl(D, getSema().CurContext, TemplateArgs);
+    if (!Inst)
+      return nullptr;
+    getSema().CurrentInstantiationScope->InstantiatedLocal(D, Inst);
+    transformedLocalDecl(D, Inst);
+    return Inst;
+  }
+};
+} // namespace
+
+/// Substitution into a loop body is different than substitution in other
+/// contexts. In particular, we are not actually instantiating a template.
+/// We're just rebuilding a tree and rewiring expressions that refer to
+/// newly instantiated declarations.
+StmtResult
+Sema::SubstForTupleBody(Stmt *S,
+                        const MultiLevelTemplateArgumentList &TemplateArgs) {
+  LoopBodyInstantiator Instantiator(*this, TemplateArgs, SourceLocation());
+  return Instantiator.TransformStmt(S);
+}
+
 ExprResult
 Sema::SubstExpr(Expr *E, const MultiLevelTemplateArgumentList &TemplateArgs) {
   if (!E)
