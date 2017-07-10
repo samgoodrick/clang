@@ -2179,6 +2179,10 @@ def warn_for_range_copy : Warning<
   InGroup<RangeLoopAnalysis>, DefaultIgnore;
 def note_use_reference_type : Note<"use reference type %0 to prevent copying">;
 
+// [Meta] tuple and pack loops
+def note_loop_body_instantiation_here : Note<
+  "in instantiation of loop body expansion">;
+
 // C++11 constexpr
 def warn_cxx98_compat_constexpr : Warning<
   "'constexpr' specifier is incompatible with C++98">,
