@@ -7081,6 +7081,13 @@ public:
     /// arguments.
     NamedDecl *Template;
 
+		/// \brief The dependent for loop body in which we are performing
+    /// substitutions.
+    ///
+    // TODO: Make this a union with Entity since we are instantiating either
+    // a declaration or a statement, never both.
+    Stmt *Loop;
+
     /// \brief The list of template arguments we are substituting, if they
     /// are not part of the entity.
     const TemplateArgument *TemplateArgs;
