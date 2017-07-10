@@ -193,6 +193,7 @@ bool Sema::CodeSynthesisContext::isInstantiationRecord() const {
   case ExplicitTemplateArgumentSubstitution:
   case DeducedTemplateArgumentSubstitution:
   case PriorTemplateArgumentSubstitution:
+	case ForLoopInstantiation:
     return true;
 
   case DefaultTemplateArgumentChecking:
@@ -641,6 +642,12 @@ void Sema::PrintInstantiationStack() {
         << cast<CXXRecordDecl>(Active->Entity) << Active->SpecialMember;
       break;
 
+    case CodeSynthesisContext::ForLoopInstantiation:
+      // FIXME: Provide more context about the loop body error.
+      Diags.Report(Active->PointOfInstantiation, 
+                   diag::note_loop_body_instantiation_here);
+      break;
+
     case CodeSynthesisContext::DefiningSynthesizedFunction:
       // FIXME: For synthesized members other than special members, produce a note.
       auto *MD = dyn_cast<CXXMethodDecl>(Active->Entity);
@@ -672,6 +679,7 @@ Optional<TemplateDeductionInfo *> Sema::isSFINAEContext() const {
       if (isa<TypeAliasTemplateDecl>(Active->Entity))
         break;
       // Fall through.
+		case CodeSynthesisContext::ForLoopInstantiation:
     case CodeSynthesisContext::DefaultFunctionArgumentInstantiation:
     case CodeSynthesisContext::ExceptionSpecInstantiation:
       // This is a template instantiation, so there is no SFINAE.

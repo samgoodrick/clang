@@ -7056,6 +7056,9 @@ public:
       /// template which was deferred until it was needed.
       ExceptionSpecInstantiation,
 
+			/// We are instantiating the body of a range-based loop over a tuple.
+      ForLoopInstantiation,
+
       /// We are declaring an implicit special member function.
       DeclaringSpecialMember,
 
@@ -7305,6 +7308,12 @@ public:
                           TemplateDecl *Template,
                           NamedDecl *Param,
                           ArrayRef<TemplateArgument> TemplateArgs,
+                          SourceRange InstantiationRange);
+		
+		/// \brief Note that we are substituting into the body of a for-tuple
+    /// statement.
+    InstantiatingTemplate(Sema &SemaRef, SourceLocation PointOfInstantiation,
+                          Stmt *S, ArrayRef<TemplateArgument> TemplateArgs,
                           SourceRange InstantiationRange);
 
 
