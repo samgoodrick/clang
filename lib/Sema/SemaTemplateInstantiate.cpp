@@ -347,6 +347,21 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
           PointOfInstantiation, InstantiationRange, Param, Template,
           TemplateArgs) {}
 
+// For tuple-for instantiation.
+Sema::InstantiatingTemplate::InstantiatingTemplate(
+    Sema &SemaRef, SourceLocation PointOfInstantiation, Stmt *S,
+    ArrayRef<TemplateArgument> TemplateArgs, SourceRange InstantiationRange)
+    : InstantiatingTemplate(
+          SemaRef, 
+          CodeSynthesisContext::ForLoopInstantiation,
+          PointOfInstantiation, InstantiationRange, nullptr, nullptr,
+          TemplateArgs) {
+  // Set the loop on the active instantiation.
+  CodeSynthesisContext& Inst = 
+    SemaRef.CodeSynthesisContexts.back();
+  Inst.Loop = S;      
+}
+
 void Sema::pushCodeSynthesisContext(CodeSynthesisContext Ctx) {
   Ctx.SavedInNonInstantiationSFINAEContext = InNonInstantiationSFINAEContext;
   InNonInstantiationSFINAEContext = false;
