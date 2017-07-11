@@ -1532,6 +1532,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   assert(Tok.is(tok::kw_for) && "Not a for stmt!");
   SourceLocation ForLoc = ConsumeToken();  // eat the 'for'.
 
+  SourceLocation EllipsisLoc;
+  if (getLangOpts().CPlusPlus1z &&
+      (Tok.is(tok::ellipsis) || Tok.is(tok::kw_constexpr)))
+    EllipsisLoc = ConsumeToken();
+
   SourceLocation CoawaitLoc;
   if (Tok.is(tok::kw_co_await))
     CoawaitLoc = ConsumeToken();
@@ -1756,10 +1761,17 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
   if (ForRange) {
     ExprResult CorrectedRange =
         Actions.CorrectDelayedTyposInExpr(ForRangeInit.RangeExpr.get());
-    ForRangeStmt = Actions.ActOnCXXForRangeStmt(
-        getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
-        ForRangeInit.ColonLoc, CorrectedRange.get(),
-        T.getCloseLocation(), Sema::BFRK_Build);
+
+		if (EllipsisLoc.isInvalid())
+      ForRangeStmt = Actions.ActOnCXXForRangeStmt(
+          getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
+          ForRangeInit.ColonLoc, CorrectedRange.get(), T.getCloseLocation(),
+          Sema::BFRK_Build);
+    else
+			ForRangeStmt = Actions.ActOnCXXForRangeStmt(
+          getCurScope(), ForLoc, CoawaitLoc, FirstPart.get(),
+          ForRangeInit.ColonLoc, CorrectedRange.get(),
+          T.getCloseLocation(), Sema::BFRK_Build);
 
   // Similarly, we need to do the semantic analysis for a for-range
   // statement immediately in order to close over temporaries correctly.
@@ -1813,8 +1825,11 @@ StmtResult Parser::ParseForStatement(SourceLocation *TrailingElseLoc) {
    return Actions.FinishObjCForCollectionStmt(ForEachStmt.get(),
                                               Body.get());
 
-  if (ForRange)
-    return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+	if (ForRange) {
+    if (EllipsisLoc.isInvalid())
+      return Actions.FinishCXXForRangeStmt(ForRangeStmt.get(), Body.get());
+    return Actions.FinishCXXExpansionStmt(ForRangeStmt.get(), Body.get());
+  }
 
   return Actions.ActOnForStmt(ForLoc, T.getOpenLocation(), FirstPart.get(),
                               SecondPart, ThirdPart, T.getCloseLocation(),
