@@ -1,4 +1,4 @@
-//===------- SemaTemplateInstantiate.cpp - C++ Template Instantiation ------===/
+//===------- nstantiate.cpp - C++ Template Instantiation ------===/
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -233,6 +233,7 @@ Sema::InstantiatingTemplate::InstantiatingTemplate(
     SemaRef.pushCodeSynthesisContext(Inst);
 
     AlreadyInstantiating =
+			Inst.Entity && // There is no entity when instantiating a for loop.
         !SemaRef.InstantiatingSpecializations
              .insert(std::make_pair(Inst.Entity->getCanonicalDecl(), Inst.Kind))
              .second;
