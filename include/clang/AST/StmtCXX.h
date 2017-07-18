@@ -212,7 +212,7 @@ public:
 
 /// \brief The base class of tuple and pack expansion statements.
 ///
-/// Tuple and pack expansion statements have the following form:
+/// Expansion statements have the following bform:
 ///
 /// \verbatim
 ///   for (auto x : expandable) statement
@@ -359,7 +359,7 @@ public:
     return T->getStmtClass() == CXXTupleExpansionStmtClass;
   }
 };
-
+	
 /// \brief Represents the expansion of a parameter pack over a loop body.
 class CXXPackExpansionStmt : public CXXExpansionStmt {
 public:

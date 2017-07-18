@@ -2700,7 +2700,7 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
     // should be 'loop-var = __tuple[I]' instead of a get expression.
     assert(!RangeClassType->isArrayType() &&
            "Expansion over arrays not implemented");
-
+		
     // Get the tuple size for the number of expansions.
     if (!GetTupleSize(*this, ColonLoc, RangeClassType, Size))
       return StmtError();
