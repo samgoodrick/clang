@@ -908,6 +908,8 @@ void ExprEngine::Visit(const Stmt *S, ExplodedNode *Pred,
     case Stmt::CompoundStmtClass:
     case Stmt::ContinueStmtClass:
     case Stmt::CXXForRangeStmtClass:
+  	case Stmt::CXXTupleExpansionStmtClass:
+  	case Stmt::CXXPackExpansionStmtClass:
     case Stmt::DefaultStmtClass:
     case Stmt::DoStmtClass:
     case Stmt::ForStmtClass:
