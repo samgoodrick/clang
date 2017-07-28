@@ -1116,7 +1116,7 @@ private:
         auto IP = CGF.Builder.saveAndClearIP();
         CGF.EmitBlock(Stack.back().ExitBlock.getBlock());
         CodeGen(CGF);
-        CGF.EmitBranchThroughCleanup(Stack.back().ContBlock);
+        CGF.EmitBranch(Stack.back().ContBlock.getBlock());
         CGF.Builder.restoreIP(IP);
         Stack.back().HasBeenEmitted = true;
       }
@@ -1479,6 +1479,9 @@ public:
 
   const TargetInfo &getTarget() const { return Target; }
   llvm::LLVMContext &getLLVMContext() { return CGM.getLLVMContext(); }
+  const TargetCodeGenInfo &getTargetHooks() const {
+    return CGM.getTargetCodeGenInfo();
+  }
 
   //===--------------------------------------------------------------------===//
   //                                  Cleanups
@@ -1748,11 +1751,6 @@ public:
   /// Emit a type checked load from the given vtable.
   llvm::Value *EmitVTableTypeCheckedLoad(const CXXRecordDecl *RD, llvm::Value *VTable,
                                          uint64_t VTableByteOffset);
-
-  /// CanDevirtualizeMemberFunctionCalls - Checks whether virtual calls on given
-  /// expr can be devirtualized.
-  bool CanDevirtualizeMemberFunctionCall(const Expr *Base,
-                                         const CXXMethodDecl *MD);
 
   /// EnterDtorCleanups - Enter the cleanups necessary to complete the
   /// given phase of destruction for a destructor.  The end result
@@ -3502,6 +3500,14 @@ public:
   void EmitCXXGuardedInit(const VarDecl &D, llvm::GlobalVariable *DeclPtr,
                           bool PerformInit);
 
+  enum class GuardKind { VariableGuard, TlsGuard };
+
+  /// Emit a branch to select whether or not to perform guarded initialization.
+  void EmitCXXGuardedInitBranch(llvm::Value *NeedsInit,
+                                llvm::BasicBlock *InitBlock,
+                                llvm::BasicBlock *NoInitBlock,
+                                GuardKind Kind, const VarDecl *D);
+
   /// GenerateCXXGlobalInitFunc - Generates code for initializing global
   /// variables.
   void GenerateCXXGlobalInitFunc(llvm::Function *Fn,
@@ -3595,12 +3601,19 @@ public:
   /// nonnull, if \p LHS is marked _Nonnull.
   void EmitNullabilityCheck(LValue LHS, llvm::Value *RHS, SourceLocation Loc);
 
+  /// An enumeration which makes it easier to specify whether or not an
+  /// operation is a subtraction.
+  enum { NotSubtraction = false, IsSubtraction = true };
+
   /// Same as IRBuilder::CreateInBoundsGEP, but additionally emits a check to
   /// detect undefined behavior when the pointer overflow sanitizer is enabled.
   /// \p SignedIndices indicates whether any of the GEP indices are signed.
+  /// \p IsSubtraction indicates whether the expression used to form the GEP
+  /// is a subtraction.
   llvm::Value *EmitCheckedInBoundsGEP(llvm::Value *Ptr,
                                       ArrayRef<llvm::Value *> IdxList,
                                       bool SignedIndices,
+                                      bool IsSubtraction,
                                       SourceLocation Loc,
                                       const Twine &Name = "");
 
@@ -3823,10 +3836,6 @@ public:
 
 private:
   QualType getVarArgType(const Expr *Arg);
-
-  const TargetCodeGenInfo &getTargetHooks() const {
-    return CGM.getTargetCodeGenInfo();
-  }
 
   void EmitDeclMetadata();
 
