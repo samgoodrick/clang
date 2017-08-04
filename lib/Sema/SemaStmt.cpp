@@ -2706,9 +2706,6 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
     return StmtError();
   }
 
-	llvm::outs() << "RangeVar\n";
-	RangeVar->dump();
-
   // Claim the type doesn't contain 'auto': we've already done the checking.
   DeclGroupPtrTy RangeGroup =
       BuildDeclaratorGroup(MutableArrayRef<Decl *>((Decl **)&RangeVar, 1));
@@ -2718,8 +2715,6 @@ StmtResult Sema::ActOnCXXExpansionStmt(Scope *S, SourceLocation ForLoc,
     return StmtError();
   }
 
-  llvm::outs() << "LoopVar()\n";
-	LoopVar->dump();
   // Build the other various subexpressions needed for the loop body.
   return BuildCXXTupleExpansionStmt(ForLoc, EllipsisLoc, ColonLoc,
                                     RangeDecl.get(), LoopDS, RParenLoc, Kind);
@@ -2745,9 +2740,6 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
   llvm::APSInt Size = llvm::APSInt::get(0);
   TemplateParameterList *ParmList = nullptr;
 
-	llvm::outs() << "RangeClassType\n";
-	RangeClassType.dump();
-
   if (RangeVarType->isDependentType()) {
     // The range is implicitly used as a placeholder when it is dependent.
     RangeVar->markUsed(Context);
@@ -2759,21 +2751,54 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
   } else {
     RangeClassType = RangeClassType.getDesugaredType(Context);
 
-    // FIXME: Support expansion over an array. For arrays, the loop variable
-    // should be 'loop-var = __tuple[I]' instead of a get expression.
-    // assert(!RangeClassType->isArrayType() &&
-    //        "Expansion over arrays not implemented");
+    // Expansion over arrays
 		if( RangeClassType->isArrayType() ) {
 			if( const ArrayType *UnqAT = RangeVar->getInit()->getType()->getAsArrayTypeUnsafe() ) {
 				if( const ConstantArrayType *CAT = dyn_cast<ConstantArrayType>(UnqAT) ) {
 					// ExprResult BoundExpr = IntegerLiteral::Create( Context, CAT->getSize(), 
 					// 																							 Context.getPointerDiffType, RangeVar->getLocation() );
 					// Size = llvm::APSInt::get( CAT->getSize() );
-					Size = CAT->getSize();
-					llvm::outs() << Size << '\n';
+					Size = CAT->getSize();					
+
+					// The '__tuple' argument.
+					ExprResult RangeRef =
+						BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
+					if (RangeRef.isInvalid())
+						return StmtError();
+
+					// Declare a new template parameter '__N' for which we will be substituting
+					// concrete values later.
+					//
+					// FIXME: Correctly compute the template parameter depth.
+					IdentifierInfo *ParmName = &PP.getIdentifierTable().get("__N");
+					const QualType ParmTy = Context.getSizeType();
+					TypeSourceInfo *ParmTI = Context.getTrivialTypeSourceInfo(ParmTy, ColonLoc);
+					NonTypeTemplateParmDecl *Parm = NonTypeTemplateParmDecl::Create(
+						Context, Context.getTranslationUnitDecl(), ColonLoc, ColonLoc,
+						/*Depth=*/0, /*Position=*/0, ParmName, ParmTy, false, ParmTI);
+					NamedDecl *Parms[] = {Parm};
+					ParmList = TemplateParameterList::Create(Context, ColonLoc, ColonLoc, Parms,
+																									 ColonLoc, nullptr);
+
+					// Dependent template argument '__N'.
+					ExprResult ParmRef = BuildDeclRefExpr(Parm, ParmTy, VK_RValue, ColonLoc);
+					if (ParmRef.isInvalid())
+						return StmtError();
+					
+					// Build the actual array accessor __tuple[__N] expression
+					ExprResult SubscriptAccessor = ActOnArraySubscriptExpr( getCurScope(), RangeRef.get(), ColonLoc, ParmRef.get(), ColonLoc );
+
+					// And make that the initializer of the tuple argument.
+					AddInitializerToDecl(LoopVar, SubscriptAccessor.get(), false);
+					if (LoopVar->isInvalidDecl())
+						return StmtError();
+					
+					// Note that the body isn't parsed yet.
+					return new (Context) CXXTupleExpansionStmt(
+						nullptr, RangeVarDS, LoopVarDS, nullptr, Size.getExtValue(), ForLoc,
+						EllipsisLoc, ColonLoc, RParenLoc);
 				}
 			}
-			assert( false && "Expansion over arrays is being implemented!" );
 		} else {
 		
 			// Get the tuple size for the number of expansions.
@@ -3082,7 +3107,6 @@ StmtResult Sema::FinishCXXTupleExpansionStmt(CXXTupleExpansionStmt *S,
   for (std::size_t I = 0; I < S->getSize(); ++I) {
     IntegerLiteral *E = IntegerLiteral::Create(
         Context, llvm::APSInt::getUnsigned(I), Context.getSizeType(), Loc);
-		llvm::outs() << llvm::APSInt::getUnsigned(I) << '\n';
     TemplateArgument Args[] = {TemplateArgument(
         Context, llvm::APSInt(E->getValue(), true), E->getType())};
     TemplateArgumentList TempArgs(TemplateArgumentList::OnStack, Args);
