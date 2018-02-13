@@ -1896,6 +1896,9 @@ public:
   NamedDecl *
   ActOnDecompositionDeclarator(Scope *S, Declarator &D,
                                MultiTemplateParamsArg TemplateParamLists);
+	enum class IsTupleLike { TupleLike, NotTupleLike, Error };
+	IsTupleLike isTupleLike(SourceLocation Loc, QualType T,
+													llvm::APSInt &Size);
   // Returns true if the variable declaration is a redeclaration
   bool CheckVariableDeclaration(VarDecl *NewVD, LookupResult &Previous);
   void CheckVariableDeclarationType(VarDecl *NewVD);

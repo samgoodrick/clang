@@ -2740,6 +2740,57 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
   llvm::APSInt Size = llvm::APSInt::get(0);
   TemplateParameterList *ParmList = nullptr;
 
+	auto TupleLike = isTupleLike(RangeVarDecl->getLocStart(), RangeClassType, Size);
+
+	switch( TupleLike ) {
+	case IsTupleLike::NotTupleLike:
+	{
+	llvm::SmallVector<Expr *, 8> Fields;
+
+	if (const CXXRecordDecl *RD =
+			RangeVar->getInit()->getType()->getAsCXXRecordDecl()) {
+		if (RD->isUnion()) {
+			Diag(ColonLoc, diag::err_decomp_decl_unbindable_type)
+				<< RD;
+			assert( false );
+		}
+		
+		for(auto *FD : RD->fields()) {
+			if (FD->isUnnamedBitfield())
+				continue;
+
+			if (FD->isAnonymousStructOrUnion()) {
+				Diag(ColonLoc, diag::err_decomp_decl_anon_union_member)
+					<< FD->getType()->isUnionType();
+				Diag(FD->getLocation(), diag::note_declared_at);
+				assert( true );
+			}
+				 
+			ExprResult E = BuildDeclRefExpr(RangeVar, RangeClassType, VK_LValue, ColonLoc);
+					
+			E = BuildFieldReferenceExpr(E.get(),  /*IsArrow*/ false, ColonLoc,
+																	CXXScopeSpec(), FD,
+																	DeclAccessPair::make(FD, FD->getAccess()),
+																	DeclarationNameInfo(FD->getDeclName(), ColonLoc));
+
+			Fields.push_back(E.get());	
+		}
+		
+		OpaqueValueExpr  *Init =
+			new (Context) OpaqueValueExpr(ColonLoc, Context.DependentTy, VK_LValue);
+		AddInitializerToDecl(LoopVar, Init, false);
+				
+		// Note that the body isn't parsed yet.
+		return new (Context) CXXTupleExpansionStmt(
+			Fields, RangeVarDS, LoopVarDS, nullptr, Fields.size(), ForLoc,
+			EllipsisLoc, ColonLoc, RParenLoc);
+
+	}
+	break;
+	} // case IsTupleLike
+
+	case IsTupleLike::TupleLike:
+	{
   if (RangeVarType->isDependentType()) {
     // The range is implicitly used as a placeholder when it is dependent.
     RangeVar->markUsed(Context);
@@ -2832,6 +2883,10 @@ StmtResult Sema::BuildCXXTupleExpansionStmt(SourceLocation ForLoc,
   return new (Context) CXXTupleExpansionStmt(
       ParmList, RangeVarDS, LoopVarDS, nullptr, Size.getExtValue(), ForLoc,
       EllipsisLoc, ColonLoc, RParenLoc);
+	} // case IsTupleLike::TupleLike
+	case IsTupleLike::Error:
+		break;
+	} // switch (TupleLike)
 }
 
 StmtResult Sema::BuildCXXPackExpansionStmt(SourceLocation ForLoc,

@@ -333,8 +333,16 @@ class CXXTupleExpansionStmt : public CXXExpansionStmt {
   /// the initializer for the loop variable.
   TemplateParameterList *Parms;
 
+	/// \brief A collection of fields from a structure, used for expansions
+	/// over structures only.
+	llvm::SmallVector<Expr *, 8> Fields;
+
 public:
   CXXTupleExpansionStmt(TemplateParameterList *TP, DeclStmt *RangeVar,
+                        DeclStmt *LoopVar, Stmt *Body, std::size_t N,
+                        SourceLocation FL, SourceLocation EL, SourceLocation CL,
+                        SourceLocation RPL);
+	CXXTupleExpansionStmt(llvm::SmallVector<Expr*, 8> Fields, DeclStmt *RangeVar,
                         DeclStmt *LoopVar, Stmt *Body, std::size_t N,
                         SourceLocation FL, SourceLocation EL, SourceLocation CL,
                         SourceLocation RPL);

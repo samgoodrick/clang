@@ -988,22 +988,20 @@ getTrivialTypeTemplateArgument(Sema &S, SourceLocation Loc, QualType T) {
   return S.getTrivialTemplateArgumentLoc(TemplateArgument(T), QualType(), Loc);
 }
 
-namespace { enum class IsTupleLike { TupleLike, NotTupleLike, Error }; }
-
-static IsTupleLike isTupleLike(Sema &S, SourceLocation Loc, QualType T,
+Sema::IsTupleLike Sema::isTupleLike(SourceLocation Loc, QualType T,
                                llvm::APSInt &Size) {
   EnterExpressionEvaluationContext ContextRAII(
-      S, Sema::ExpressionEvaluationContext::ConstantEvaluated);
+      *this, Sema::ExpressionEvaluationContext::ConstantEvaluated);
 
-  DeclarationName Value = S.PP.getIdentifierInfo("value");
-  LookupResult R(S, Value, Loc, Sema::LookupOrdinaryName);
+  DeclarationName Value = PP.getIdentifierInfo("value");
+  LookupResult R(*this, Value, Loc, Sema::LookupOrdinaryName);
 
   // Form template argument list for tuple_size<T>.
   TemplateArgumentListInfo Args(Loc, Loc);
-  Args.addArgument(getTrivialTypeTemplateArgument(S, Loc, T));
+  Args.addArgument(getTrivialTypeTemplateArgument(*this, Loc, T));
 
   // If there's no tuple_size specialization, it's not tuple-like.
-  if (lookupStdTypeTraitMember(S, R, Loc, "tuple_size", Args, /*DiagID*/0))
+  if (lookupStdTypeTraitMember(*this, R, Loc, "tuple_size", Args, /*DiagID*/0))
     return IsTupleLike::NotTupleLike;
 
   // If we get this far, we've committed to the tuple interpretation, but
@@ -1021,16 +1019,16 @@ static IsTupleLike isTupleLike(Sema &S, SourceLocation Loc, QualType T,
   } Diagnoser(R, Args);
 
   if (R.empty()) {
-    Diagnoser.diagnoseNotICE(S, Loc, SourceRange());
+    Diagnoser.diagnoseNotICE(*this, Loc, SourceRange());
     return IsTupleLike::Error;
   }
 
   ExprResult E =
-      S.BuildDeclarationNameExpr(CXXScopeSpec(), R, /*NeedsADL*/false);
+      BuildDeclarationNameExpr(CXXScopeSpec(), R, /*NeedsADL*/false);
   if (E.isInvalid())
     return IsTupleLike::Error;
 
-  E = S.VerifyIntegerConstantExpression(E.get(), &Size, Diagnoser, false);
+  E = VerifyIntegerConstantExpression(E.get(), &Size, Diagnoser, false);
   if (E.isInvalid())
     return IsTupleLike::Error;
 
@@ -1417,7 +1415,7 @@ void Sema::CheckCompleteDecompositionDeclaration(DecompositionDecl *DD) {
   //   if the expression std::tuple_size<E>::value is a well-formed integral
   //   constant expression, [...]
   llvm::APSInt TupleSize(32);
-  switch (isTupleLike(*this, DD->getLocation(), DecompType, TupleSize)) {
+  switch (isTupleLike(DD->getLocation(), DecompType, TupleSize)) {
   case IsTupleLike::Error:
     DD->setInvalidDecl();
     return;

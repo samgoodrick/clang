@@ -116,6 +116,14 @@ CXXTupleExpansionStmt::CXXTupleExpansionStmt(
     : CXXExpansionStmt(CXXTupleExpansionStmtClass, RangeVar, LoopVar, Body, N,
                        FL, EL, CL, RPL),
       Parms(TP) {}
+CXXTupleExpansionStmt::CXXTupleExpansionStmt(
+  	llvm::SmallVector<Expr *, 8> Fields, DeclStmt *RangeVar,
+	  DeclStmt *LoopVar, Stmt *Body, std::size_t N,
+	  SourceLocation FL, SourceLocation EL, SourceLocation CL,
+	  SourceLocation RPL)
+    : CXXExpansionStmt(CXXTupleExpansionStmtClass, RangeVar, LoopVar, Body, N,
+                       FL, EL, CL, RPL),
+			Fields(Fields) {}
 
 NonTypeTemplateParmDecl *CXXTupleExpansionStmt::getPlaceholderParameter() {
   return cast<NonTypeTemplateParmDecl>(Parms->getParam(0));
